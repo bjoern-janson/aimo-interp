@@ -138,8 +138,7 @@ Will record, at minimum:
 - acquisition timestamp;
 - upstream default branch;
 - competition-site/contract references;
-- later training-data revision;
-- later activation-interface revision.
+- a reference to `RELEASE_REGISTRY.json`, the sole custody authority for later training-data and activation-interface artifacts.
 
 No upstream update is silently absorbed. Every update becomes an explicit provenance event.
 
@@ -170,6 +169,14 @@ Leaderboard scores belong here as adjudication events, not as tuning instruction
 ### `RELEASE_REGISTRY.json`
 
 Records gate artifacts as **write-once, content-addressed, Git-custodied** records. The API refuses replacement of an occupied slot; content hashes and preserved Git ancestry make later alteration detectable. This is not a claim of metaphysical or history-rewrite-proof immutability.
+
+Directory custody identity is computed from a canonical manifest: each file contributes its sorted relative POSIX path, byte length, and `SHA-256(file bytes)`. The deterministically serialized manifest is then hashed as a whole:
+
+```text
+H_tree = SHA-256(CanonicalJSON([(path_i, bytes_i, SHA-256(contents_i))]))
+```
+
+Filesystem mode bits are excluded from this identity to avoid irrelevant cross-platform variation.
 
 A training-data record or an activation-interface record may be registered before the other. Until both records exist, registration authorizes neither scientific content inspection nor any observational, label, grouping, feature, classifier, or trajectory work.
 
@@ -370,6 +377,20 @@ The pre-gate implementation is complete when all of the following are true:
 7. cross-platform runtime, nullable RSS, and per-device CUDA telemetry are recorded with their measurement semantics;
 8. no robustness feature family or classifier has been chosen from label evidence;
 9. project state explicitly waits on training data + CoT activation interface.
+10. the terminal infrastructure state is explicit:
+
+```text
+INFRASTRUCTURE_READY
+  iff unmodified official baseline executes
+  and coverage == 1.0
+  and invalid_predictions == 0
+  and a compatible environment is present
+
+ENVIRONMENT_BLOCKED
+  otherwise, when the baseline acceptance cannot be completed because the compatible environment is unavailable
+```
+
+`ENVIRONMENT_BLOCKED` is not `INFRASTRUCTURE_READY`. Neither terminal state authorizes scientific inspection, feature selection, classifier training, or a scientific state transition.
 
 ## 14. Stop condition
 
