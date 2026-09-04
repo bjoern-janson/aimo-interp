@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, `uv`, `pytest`, Python standard library; optional runtime hooks for PyTorch when available; official competition behavior is delegated to `aimo-interp/getting-started@e98c489a98acb6c833588dca74228bee9782d5dd`.
 
-**Spec:** `docs/superpowers/specs/2026-09-04-aimo-interp-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-04-aimo-interp-design.md` at `eced37212fd0d526475e5a16846e75801f9fd3c7`
 
 ## Global Constraints
 
@@ -23,11 +23,11 @@
 - Do not reconstruct hidden labels through runtime perturbation replay.
 - Do not use leaderboard feedback to choose feature families, hypotheses, thresholds, or model classes.
 - Do not reopen Γ, L2-v1, Reach, or any closed scientific lineage.
-- The scientific gate remains `TRAINING DATA + CoT ACTIVATION INTERFACE`.
+- The scientific gate remains `TRAINING DATA + CoT ACTIVATION INTERFACE`; early receipt of one artifact is custody only and its contents remain unread.
 - The candidate future H0 is recorded only as non-executable context; no preregistration occurs in this plan.
 - Infrastructure failures must fail loudly locally; they must not silently become robustness predictions.
 - The public/warmup sample is a contract check, not an optimization oracle.
-- The implementation phase ends in `WAITING_FOR_EXTERNAL_GATE`; no scientific experiment is opened.
+- The implementation phase ends in exactly one truthful terminal state: `INFRASTRUCTURE_READY` or `ENVIRONMENT_BLOCKED`; neither opens scientific work.
 
 ---
 
@@ -98,7 +98,7 @@ docs/
       2026-09-04-aimo-interp-pre-gate-infrastructure.md
 ```
 
-`docs/superpowers/specs/2026-09-04-aimo-interp-design.md` already exists and is immutable except through a separately approved design revision.
+`docs/superpowers/specs/2026-09-04-aimo-interp-design.md` already exists and is changed only through a separately approved design revision.
 
 ---
 
@@ -260,7 +260,7 @@ FEATURE ONTOLOGY:           NOT FROZEN
 ```
 
 The gate opens only after both official training data and the official CoT
-activation interface have been released, registered with immutable provenance,
+activation interface have been released, registered as write-once, content-addressed, Git-custodied provenance,
 and passed a separate observational audit.
 
 The current repository is infrastructure only.
@@ -2066,11 +2066,11 @@ Append to `COMPETITION_STATE.md` only after Step 6 passes:
 
 ```text
 PRE-GATE SOFTWARE:           VERIFIED
-OFFICIAL MODEL BASELINE:     PENDING ENVIRONMENT ACCEPTANCE
+OFFICIAL_BASELINE_CONTRACT_SMOKE:     PENDING ENVIRONMENT ACCEPTANCE
 SCIENTIFIC FEATURE FAMILY:   NONE
 ROBUSTNESS CLASSIFIER:       NONE
 LEADERBOARD-DIRECTED TUNING: NONE
-NEXT ACTION:                 OFFICIAL BASELINE ACCEPTANCE
+NEXT ACTION:                 OFFICIAL BASELINE CONTRACT-SMOKE ACCEPTANCE
 ```
 ````
 
@@ -2427,44 +2427,3 @@ that compatible environment.
 Neither terminal state authorizes label/group/activation inspection, feature
 selection, classifier training, leaderboard-directed tuning, label replay, or
 scientific execution.
-## Official Baseline Acceptance Note
-
-Task 9 is the sole authority for official trained-probe acceptance. Do not run a
-different baseline, modify the upstream baseline, substitute a proxy model, or
-interpret baseline accuracy as scientific evidence.
-
-A missing compatible model-cache/GPU environment yields
-`ENVIRONMENT_BLOCKED`, not a guessed or simulated PASS.
-
----
-
-## Implementation Completion Gate
-
-The plan is complete only when all of the following hold simultaneously:
-
-```text
-UPSTREAM PIN                VERIFIED
-OFFICIAL HARNESS BRIDGE     VERIFIED
-OFFICIAL TRAINED-PROBE      PASS
-ALL_TRUE CONTROL            VERIFIED
-ALL_FALSE CONTROL           VERIFIED
-DETERMINISTIC ZIP           VERIFIED BYTE-FOR-BYTE
-ONE-LOAD BATCH LIFECYCLE    VERIFIED WITH TEST DOUBLE
-TELEMETRY                    VERIFIED
-RELEASE REGISTRY             CLOSED
-SCIENTIFIC FEATURE FAMILY    NONE
-ROBUSTNESS CLASSIFIER        NONE
-SCIENTIFIC PREREGISTRATION  NOT AUTHORIZED
-SCIENTIFIC EXECUTION        NOT AUTHORIZED
-PROJECT STATE               WAITING_FOR_EXTERNAL_GATE
-```
-
-If Task 9 ends `ENVIRONMENT_BLOCKED`, this completion gate is not satisfied;
-the repository remains `PRE_GATE_SOFTWARE_VERIFIED` and waits for a compatible
-acceptance environment without opening science.
-
-At that point, stop.
-
-The next implementation object is **not** a model. It is a separately
-authorized observational audit after both official gating artifacts are
-registered.
