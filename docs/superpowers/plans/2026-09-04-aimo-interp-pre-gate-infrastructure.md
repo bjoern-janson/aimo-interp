@@ -1562,24 +1562,21 @@ git commit -m "feat: add portable AIMO execution telemetry"
 
 ---
 
-### Task 7: Add immutable release registration and gate logic
+### Task 7: Add write-once, content-addressed, Git-custodied release registration
 
 **Files:**
 - Create: `src/aimo_interp_infra/release_gate.py`
 - Create: `scripts/register_release.py`
 - Test: `tests/test_release_gate.py`
-- Modify: `COMPETITION_STATE.md`
-- Modify: `RESEARCH_LEDGER.md`
+- Modify: `COMPETITION_STATE.md` and `RESEARCH_LEDGER.md`
 
 **Interfaces:**
-- Consumes an already acquired official artifact or schema file plus its source URL.
-- Produces:
-  - `ArtifactRecord`
-  - `record_artifact(path: Path, source: str, revision: str, acquired_at_utc: str) -> ArtifactRecord`
-  - `register(registry_path: Path, kind: Literal["training_data", "cot_activation_interface"], record: ArtifactRecord) -> dict`
-- Registration records bytes/provenance only. It does not inspect labels or select features.
+- `RELEASE_REGISTRY.json` is the sole custody authority for gate artifacts.
+- `canonical_directory_manifest(path: Path) -> list[dict[str, object]]` returns only sorted POSIX relative paths, byte lengths, and per-file SHA-256s.
+- `record_artifact(path, source, revision, acquired_at_utc) -> ArtifactRecord` provides the content address.
+- `register(registry_path, kind, record)` is write-once by API. A single record is custody only; scientific inspection remains closed until both records exist.
 
-- [ ] **Step 1: Write failing release-gate tests**
+- [ ] **Step 1: Write failing canonical-manifest and write-once tests**
 
 Create `tests/test_release_gate.py`:
 
@@ -1592,16 +1589,17 @@ import pytest
 
 from aimo_interp_infra.release_gate import (
     ArtifactAlreadyRegistered,
+    canonical_directory_manifest,
     record_artifact,
     register,
 )
 
 
-def _empty_registry(path: Path) -> None:
+def make_registry(path: Path) -> None:
     path.write_text(
         json.dumps(
             {
-                "schema": "aimo-interp-release-registry/v0.1",
+                "schema": "aimo-interp-release-registry/v0.2",
                 "training_data": None,
                 "cot_activation_interface": None,
                 "gate_open": False,
@@ -1611,95 +1609,75 @@ def _empty_registry(path: Path) -> None:
     )
 
 
-def test_record_artifact_hashes_exact_bytes(tmp_path: Path):
-    artifact = tmp_path / "artifact.bin"
-    artifact.write_bytes(b"abc")
+def test_directory_identity_is_exact_canonical_json_manifest(tmp_path: Path):
+    root = tmp_path / "artifact"
+    root.mkdir()
+    (root / "z.txt").write_bytes(b"z")
+    (root / "docs").mkdir()
+    (root / "docs" / "a.txt").write_bytes(b"abc")
 
+    expected = [
+        {
+            "path": "docs/a.txt",
+            "size_bytes": 3,
+            "sha256": hashlib.sha256(b"abc").hexdigest(),
+        },
+        {
+            "path": "z.txt",
+            "size_bytes": 1,
+            "sha256": hashlib.sha256(b"z").hexdigest(),
+        },
+    ]
+    assert canonical_directory_manifest(root) == expected
     record = record_artifact(
-        artifact,
-        source="https://example.test/artifact",
-        revision="rev-a",
-        acquired_at_utc="2026-09-04T12:00:00Z",
+        root, "https://example.test/a", "r1", "2026-09-04T12:00:00Z"
     )
+    encoded = json.dumps(
+        expected,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    assert record.sha256 == hashlib.sha256(encoded).hexdigest()
+    assert record.identity_algorithm == "sha256-canonical-json-manifest/v1"
 
-    assert record.sha256 == hashlib.sha256(b"abc").hexdigest()
-    assert record.size_bytes == 3
+
+def test_file_identity_is_exact_file_bytes(tmp_path: Path):
+    path = tmp_path / "train.json"
+    path.write_bytes(b"{}")
+    record = record_artifact(
+        path, "https://example.test/t", "r1", "2026-09-04T12:00:00Z"
+    )
+    assert record.sha256 == hashlib.sha256(b"{}").hexdigest()
     assert record.path_kind == "file"
 
 
-def test_record_artifact_hashes_directory_tree_deterministically(tmp_path: Path):
-    artifact = tmp_path / "activation-interface"
-    artifact.mkdir()
-    (artifact / "schema.json").write_text('{"shape":[1,2]}\n', encoding="utf-8")
-    nested = artifact / "docs"
-    nested.mkdir()
-    (nested / "README.md").write_text("activation contract\n", encoding="utf-8")
-
-    first = record_artifact(
-        artifact,
-        source="https://example.test/activation-interface",
-        revision="commit-123",
-        acquired_at_utc="2026-09-04T12:00:00Z",
-    )
-    second = record_artifact(
-        artifact,
-        source="https://example.test/activation-interface",
-        revision="commit-123",
-        acquired_at_utc="2026-09-04T12:00:00Z",
-    )
-
-    assert first.sha256 == second.sha256
-    assert first.path_kind == "directory"
-    assert first.size_bytes > 0
-
-
-def test_gate_opens_only_after_both_artifacts_registered(tmp_path: Path):
+def test_gate_opens_after_both_records_and_never_replaces_one(tmp_path: Path):
     registry = tmp_path / "registry.json"
-    _empty_registry(registry)
-
-    training = tmp_path / "training.json"
-    training.write_text("{}", encoding="utf-8")
-    activation = tmp_path / "activation.json"
-    activation.write_text("{}", encoding="utf-8")
-
-    training_record = record_artifact(
-        training,
-        source="https://example.test/training",
-        revision="train-rev",
-        acquired_at_utc="2026-09-04T12:00:00Z",
+    make_registry(registry)
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    first.write_text("{}", encoding="utf-8")
+    second.write_text("{}", encoding="utf-8")
+    first_state = register(
+        registry, "training_data",
+        record_artifact(first, "https://example.test/t", "t", "2026-09-04T12:00:00Z"),
     )
-    activation_record = record_artifact(
-        activation,
-        source="https://example.test/activation",
-        revision="activation-rev",
-        acquired_at_utc="2026-09-04T12:01:00Z",
+    assert first_state["gate_open"] is False
+    second_state = register(
+        registry, "cot_activation_interface",
+        record_artifact(second, "https://example.test/z", "z", "2026-09-04T12:01:00Z"),
     )
-
-    first = register(registry, "training_data", training_record)
-    assert first["gate_open"] is False
-
-    second = register(registry, "cot_activation_interface", activation_record)
-    assert second["gate_open"] is True
-
-
-def test_registration_is_immutable(tmp_path: Path):
-    registry = tmp_path / "registry.json"
-    _empty_registry(registry)
-    artifact = tmp_path / "artifact.json"
-    artifact.write_text("{}", encoding="utf-8")
-    record = record_artifact(
-        artifact,
-        source="https://example.test/training",
-        revision="train-rev",
-        acquired_at_utc="2026-09-04T12:00:00Z",
-    )
-    register(registry, "training_data", record)
-
+    assert second_state["gate_open"] is True
     with pytest.raises(ArtifactAlreadyRegistered):
-        register(registry, "training_data", record)
+        register(
+            registry, "training_data",
+            record_artifact(first, "https://example.test/t", "t", "2026-09-04T12:00:00Z"),
+        )
 ```
 
-- [ ] **Step 2: Run tests and verify the release-gate module is missing**
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -1709,7 +1687,7 @@ uv run pytest tests/test_release_gate.py -v
 
 Expected: FAIL because `aimo_interp_infra.release_gate` does not exist.
 
-- [ ] **Step 3: Implement immutable artifact records and gate computation**
+- [ ] **Step 3: Implement the byte-precise identity**
 
 Create `src/aimo_interp_infra/release_gate.py`:
 
@@ -1724,7 +1702,7 @@ from typing import Literal
 
 
 class ArtifactAlreadyRegistered(RuntimeError):
-    """Raised when a frozen release slot would be overwritten."""
+    """The registry API never replaces a filled artifact slot."""
 
 
 @dataclass(frozen=True)
@@ -1736,39 +1714,60 @@ class ArtifactRecord:
     size_bytes: int
     path_name: str
     path_kind: str
+    identity_algorithm: str
 
 
-def _hash_path(path: Path) -> tuple[str, int, str]:
-    digest = hashlib.sha256()
+def canonical_directory_manifest(path: Path) -> list[dict[str, object]]:
+    if not path.is_dir():
+        raise NotADirectoryError(path)
+    result: list[dict[str, object]] = []
+    for file_path in sorted(
+        (p for p in path.rglob("*") if p.is_file()),
+        key=lambda p: p.relative_to(path).as_posix(),
+    ):
+        payload = file_path.read_bytes()
+        result.append(
+            {
+                "path": file_path.relative_to(path).as_posix(),
+                "size_bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    return result
+
+
+def canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def hash_path(path: Path) -> tuple[str, int, str, str]:
     if path.is_file():
         payload = path.read_bytes()
-        digest.update(payload)
-        return digest.hexdigest(), len(payload), "file"
-
-    if not path.is_dir():
-        raise FileNotFoundError(path)
-
-    total_size = 0
-    for file_path in sorted(
-        (candidate for candidate in path.rglob("*") if candidate.is_file()),
-        key=lambda candidate: candidate.relative_to(path).as_posix(),
-    ):
-        relative = file_path.relative_to(path).as_posix().encode("utf-8")
-        payload = file_path.read_bytes()
-        digest.update(relative)
-        digest.update(b"\0")
-        digest.update(payload)
-        total_size += len(payload)
-    return digest.hexdigest(), total_size, "directory"
+        return (
+            hashlib.sha256(payload).hexdigest(),
+            len(payload),
+            "file",
+            "sha256-exact-file-bytes/v1",
+        )
+    manifest = canonical_directory_manifest(path)
+    return (
+        hashlib.sha256(canonical_json_bytes(manifest)).hexdigest(),
+        sum(int(item["size_bytes"]) for item in manifest),
+        "directory",
+        "sha256-canonical-json-manifest/v1",
+    )
 
 
 def record_artifact(
-    path: Path,
-    source: str,
-    revision: str,
-    acquired_at_utc: str,
+    path: Path, source: str, revision: str, acquired_at_utc: str
 ) -> ArtifactRecord:
-    sha256, size_bytes, path_kind = _hash_path(path)
+    sha256, size_bytes, path_kind, identity_algorithm = hash_path(path)
     return ArtifactRecord(
         source=source,
         revision=revision,
@@ -1777,6 +1776,7 @@ def record_artifact(
         size_bytes=size_bytes,
         path_name=path.name,
         path_kind=path_kind,
+        identity_algorithm=identity_algorithm,
     )
 
 
@@ -1788,7 +1788,6 @@ def register(
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     if registry[kind] is not None:
         raise ArtifactAlreadyRegistered(f"{kind} already registered")
-
     registry[kind] = asdict(record)
     registry["gate_open"] = (
         registry["training_data"] is not None
@@ -1801,7 +1800,11 @@ def register(
     return registry
 ```
 
-- [ ] **Step 4: Add the explicit registration CLI**
+The full directory byte convention is UTF-8 `json.dumps(manifest,
+ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)`.
+No filesystem modes or timestamps enter the identity.
+
+- [ ] **Step 4: Add the custody CLI and state language**
 
 Create `scripts/register_release.py`:
 
@@ -1818,25 +1821,19 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "kind",
-        choices=["training_data", "cot_activation_interface"],
+        "kind", choices=["training_data", "cot_activation_interface"]
     )
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--source", required=True)
     parser.add_argument("--revision", required=True)
     args = parser.parse_args()
-
     acquired_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    acquired_at = acquired_at.replace("+00:00", "Z")
     record = record_artifact(
-        args.artifact,
-        source=args.source,
-        revision=args.revision,
-        acquired_at_utc=acquired_at,
+        args.artifact, args.source, args.revision, acquired_at.replace("+00:00", "Z")
     )
     registry = register(ROOT / "RELEASE_REGISTRY.json", args.kind, record)
-
     print(f"{args.kind}: sha256={record.sha256}")
+    print(f"identity_algorithm={record.identity_algorithm}")
     print(f"gate_open={registry['gate_open']}")
 
 
@@ -1844,7 +1841,28 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 5: Run release-gate tests**
+Append to `COMPETITION_STATE.md`:
+
+```markdown
+## Gate-artifact custody
+
+`RELEASE_REGISTRY.json` is the sole custody authority for training data and
+the CoT activation interface. Registration is write-once through its API,
+content-addressed, and Git-custodied; it is not history-rewrite-proof.
+Registration is custody only. Before both records exist, inspect neither
+training-data, label, grouping, nor activation contents.
+```
+
+Append to `RESEARCH_LEDGER.md`:
+
+```markdown
+## Gate-artifact registration
+
+Custody records establish no observational unit, label semantics, grouping
+boundary, feature jurisdiction, or scientific result.
+```
+
+- [ ] **Step 5: Run tests and commit**
 
 Run:
 
@@ -1854,42 +1872,12 @@ uv run pytest tests/test_release_gate.py -v
 
 Expected: PASS.
 
-- [ ] **Step 6: Add explicit state text explaining what gate-open means**
-
-Append to `COMPETITION_STATE.md`:
-
-````markdown
-## External gate semantics
-
-`RELEASE_REGISTRY.json` may set `gate_open=true` only when both official gating
-artifacts have been immutably registered.
-
-`gate_open=true` authorizes only the **observational audit**.
-
-It does not authorize:
-- feature selection;
-- hypothesis preregistration before the audit is complete;
-- classifier training;
-- competitive scientific submission;
-- scientific execution.
-````
-
-Append to `RESEARCH_LEDGER.md`:
-
-````markdown
-## Release-registration rule
-
-Release registration is custody, not scientific interpretation. Hashing and
-recording an artifact does not establish its observational unit, leakage
-boundaries, label semantics, or scientific jurisdiction.
-````
-
-- [ ] **Step 7: Commit release-gate custody**
+Commit:
 
 ```bash
 git add src/aimo_interp_infra/release_gate.py scripts/register_release.py \
   tests/test_release_gate.py COMPETITION_STATE.md RESEARCH_LEDGER.md
-git commit -m "feat: add immutable AIMO release gate custody"
+git commit -m "feat: add AIMO content-addressed release custody"
 ```
 
 ---
