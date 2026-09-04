@@ -1,7 +1,7 @@
 # AIMO Interpretability Competition — Infrastructure-First Design
 
 **Date:** 2026-09-04  
-**Status:** DESIGN / PRE-IMPLEMENTATION / NO SCIENTIFIC EXECUTION  
+**Status:** DESIGN REVISION 1 / PRE-IMPLEMENTATION / NO SCIENTIFIC EXECUTION  
 **Repository:** `bjoern-janson/aimo-interp`  
 **Primary track:** Small Models Track  
 **Secondary track:** Main Track  
@@ -89,6 +89,7 @@ The interface contract determines the observational universe. Theory does not ge
 - Reproduce trivial controls and official baseline behavior strictly as execution checks.
 - Measure runtime, memory, coverage, and failure behavior.
 - Record upstream contract changes without interpreting them as scientific results.
+- Register released gate artifacts by bytes, provenance, and revision only; registration is not permission to inspect their scientific contents.
 
 ### Forbidden before the gate
 
@@ -99,6 +100,7 @@ The interface contract determines the observational universe. Theory does not ge
 - Reopen Γ, L2-v1, Reach, or any other closed scientific lineage.
 - Claim that ordered trajectory structure predicts robustness.
 - Treat the public/warmup validation set as an optimization oracle.
+- Inspect training-data, label, grouping, or activation contents before **both** gate artifacts are registered. Early registration remains custody only.
 
 ## 5. Repository architecture
 
@@ -165,6 +167,12 @@ next legal action
 
 Leaderboard scores belong here as adjudication events, not as tuning instructions.
 
+### `RELEASE_REGISTRY.json`
+
+Records gate artifacts as **write-once, content-addressed, Git-custodied** records. The API refuses replacement of an occupied slot; content hashes and preserved Git ancestry make later alteration detectable. This is not a claim of metaphysical or history-rewrite-proof immutability.
+
+A training-data record or an activation-interface record may be registered before the other. Until both records exist, registration authorizes neither scientific content inspection nor any observational, label, grouping, feature, classifier, or trajectory work.
+
 ## 6. Execution architecture
 
 The runtime layer should wrap—not reinterpret—the official Codabench contract.
@@ -181,6 +189,16 @@ one are_robust(model_id, problems) call
 
 The system must fail loudly in local validation rather than silently converting infrastructure failures into scientific predictions.
 
+An unmodified official reference baseline is an `OFFICIAL_BASELINE_CONTRACT_SMOKE` only:
+
+```text
+OFFICIAL_BASELINE_CONTRACT_SMOKE
+  != LIFECYCLE_CERTIFICATION
+  != SCIENTIFIC_BASELINE
+```
+
+A PASS certifies only that the unmodified specimen is accepted by official ingestion, returns a complete valid output, and can execute in the measured environment. It does not certify target-model coverage, one-load lifecycle behavior, scientific appropriateness for Small, or a robustness claim.
+
 Required execution properties:
 
 - no inference-time network dependency;
@@ -190,6 +208,8 @@ Required execution properties:
 - explicit model-id routing;
 - bounded GPU-memory lifecycle;
 - no hidden fallback classifier unless prospectively specified and separately tested;
+- cross-platform runtime and memory telemetry: RSS is explicitly unavailable (`None`) where unsupported, never fabricated as zero;
+- per-device CUDA peak-allocation telemetry, with each measured device reset immediately before the block;
 - runtime and peak-memory measurement.
 
 ## 7. Controls before scientific execution
@@ -202,7 +222,7 @@ ALL_FALSE
 OFFICIAL_REFERENCE_BASELINES
 ```
 
-These establish plumbing, score direction, coverage, and environment compatibility. They do not authorize feature selection.
+These establish plumbing, score direction, coverage, and environment compatibility. They do not authorize feature selection. The official reference baseline is recorded only as `OFFICIAL_BASELINE_CONTRACT_SMOKE` under the narrower semantics in Section 6.
 
 A text-only or model-prior control may be added only after the live released training contract is audited, because the organizers have actively changed balancing and shortcut controls during the competition rollout.
 
@@ -343,11 +363,11 @@ The pre-gate implementation is complete when all of the following are true:
 
 1. upstream starter is pinned and provenance recorded;
 2. local harness reproduces official ingestion/scoring on supplied sample data;
-3. each model is loaded at most once per `are_robust` invocation;
+3. repository-owned batch lifecycle plumbing demonstrates one load and one release per `are_robust`-equivalent batch with a test double; this is not certified by the unmodified official baseline;
 4. deterministic submission archives are reproducible byte-for-byte;
 5. trivial controls produce complete valid Boolean outputs;
-6. official baseline execution can be reproduced without modifying its scientific behavior;
-7. runtime and memory telemetry are recorded;
+6. an unmodified official baseline, if environment-supported, passes the explicitly narrow `OFFICIAL_BASELINE_CONTRACT_SMOKE` acceptance;
+7. cross-platform runtime, nullable RSS, and per-device CUDA telemetry are recorded with their measurement semantics;
 8. no robustness feature family or classifier has been chosen from label evidence;
 9. project state explicitly waits on training data + CoT activation interface.
 
