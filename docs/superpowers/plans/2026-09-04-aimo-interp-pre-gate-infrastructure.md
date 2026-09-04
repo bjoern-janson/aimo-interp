@@ -1349,7 +1349,7 @@ git commit -m "feat: add one-load batch model lifecycle"
 
 ---
 
-### Task 6: Add runtime and memory telemetry as non-scientific receipts
+### Task 6: Add cross-platform, per-device telemetry as non-scientific receipts
 
 **Files:**
 - Create: `src/aimo_interp_infra/telemetry.py`
@@ -1357,13 +1357,12 @@ git commit -m "feat: add one-load batch model lifecycle"
 - Modify: `runtime/README.md`
 
 **Interfaces:**
-- Produces:
-  - `TelemetryReceipt`
-  - `measure_runtime(label: str)` context manager
-  - `write_receipt(receipt: TelemetryReceipt, path: Path) -> None`
-- Telemetry may observe wall-clock time, process max RSS, and CUDA peak bytes when PyTorch/CUDA is available.
+- Produces `TelemetryReceipt(schema, label, wall_seconds, max_rss_bytes, cuda_peak_allocated_bytes_by_device)`.
+- `max_rss_bytes: int | None`; unavailable RSS is `None`, never `0`.
+- `cuda_peak_allocated_bytes_by_device: dict[str, int] | None`; each visible CUDA device is reset immediately before the measured block.
+- Telemetry is an execution receipt only and must not be used as a robustness feature.
 
-- [ ] **Step 1: Write failing telemetry tests**
+- [ ] **Step 1: Write the failing telemetry tests**
 
 Create `tests/test_telemetry.py`:
 
@@ -1371,34 +1370,68 @@ Create `tests/test_telemetry.py`:
 import json
 from pathlib import Path
 
-from aimo_interp_infra.telemetry import measure_runtime, write_receipt
+import aimo_interp_infra.telemetry as telemetry
+from aimo_interp_infra.telemetry import (
+    _cuda_peak_allocated_bytes_by_device,
+    _max_rss_bytes,
+    _reset_cuda_peak_memory_stats,
+    measure_runtime,
+    write_receipt,
+)
 
 
-def test_measure_runtime_records_nonnegative_duration():
+class FakeCuda:
+    def __init__(self) -> None:
+        self.resets: list[int] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def device_count(self) -> int:
+        return 2
+
+    def reset_peak_memory_stats(self, device: int) -> None:
+        self.resets.append(device)
+
+    def max_memory_allocated(self, device: int) -> int:
+        return {0: 17, 1: 29}[device]
+
+
+class FakeTorch:
+    def __init__(self) -> None:
+        self.cuda = FakeCuda()
+
+
+def test_cuda_peaks_are_reset_and_recorded_per_device():
+    torch_module = FakeTorch()
+    _reset_cuda_peak_memory_stats(torch_module)
+    assert torch_module.cuda.resets == [0, 1]
+    assert _cuda_peak_allocated_bytes_by_device(torch_module) == {
+        "cuda:0": 17,
+        "cuda:1": 29,
+    }
+
+
+def test_missing_resource_returns_none(monkeypatch):
+    monkeypatch.setattr(telemetry, "resource", None)
+    assert _max_rss_bytes() is None
+
+
+def test_receipt_is_nullable_and_json_serializable(tmp_path: Path):
     with measure_runtime("synthetic") as recorder:
         sum(range(100))
 
     receipt = recorder.receipt
-    assert receipt is not None
-    assert receipt.label == "synthetic"
     assert receipt.wall_seconds >= 0.0
-    assert receipt.max_rss_kib >= 0
-
-
-def test_write_receipt_is_json_serializable(tmp_path: Path):
-    with measure_runtime("synthetic") as recorder:
-        pass
+    assert receipt.max_rss_bytes is None or receipt.max_rss_bytes >= 0
 
     path = tmp_path / "receipt.json"
-    write_receipt(recorder.receipt, path)
+    write_receipt(receipt, path)
     payload = json.loads(path.read_text(encoding="utf-8"))
-
-    assert payload["schema"] == "aimo-interp-telemetry/v0.1"
-    assert payload["label"] == "synthetic"
-    assert isinstance(payload["wall_seconds"], float)
+    assert payload["schema"] == "aimo-interp-telemetry/v0.2"
 ```
 
-- [ ] **Step 2: Run tests and verify the telemetry module is missing**
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -1408,7 +1441,7 @@ uv run pytest tests/test_telemetry.py -v
 
 Expected: FAIL because `aimo_interp_infra.telemetry` does not exist.
 
-- [ ] **Step 3: Implement telemetry with optional CUDA observation**
+- [ ] **Step 3: Implement the portable measurement boundary**
 
 Create `src/aimo_interp_infra/telemetry.py`:
 
@@ -1416,13 +1449,18 @@ Create `src/aimo_interp_infra/telemetry.py`:
 from __future__ import annotations
 
 import json
-import resource
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterator
+from typing import Any, Iterator
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 @dataclass(frozen=True)
@@ -1430,36 +1468,60 @@ class TelemetryReceipt:
     schema: str
     label: str
     wall_seconds: float
-    max_rss_kib: int
-    cuda_peak_bytes: int | None
+    max_rss_bytes: int | None
+    cuda_peak_allocated_bytes_by_device: dict[str, int] | None
 
 
-def _cuda_peak_bytes() -> int | None:
+def _max_rss_bytes() -> int | None:
+    if resource is None:
+        return None
+    raw = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return raw if sys.platform == "darwin" else raw * 1024
+
+
+def _load_torch() -> Any | None:
     try:
         import torch
     except ImportError:
         return None
+    return torch
 
-    if not torch.cuda.is_available():
+
+def _reset_cuda_peak_memory_stats(torch_module: Any | None) -> None:
+    if torch_module is None or not torch_module.cuda.is_available():
+        return
+    for device in range(torch_module.cuda.device_count()):
+        torch_module.cuda.reset_peak_memory_stats(device)
+
+
+def _cuda_peak_allocated_bytes_by_device(
+    torch_module: Any | None,
+) -> dict[str, int] | None:
+    if torch_module is None or not torch_module.cuda.is_available():
         return None
-    return int(torch.cuda.max_memory_allocated())
+    return {
+        f"cuda:{device}": int(torch_module.cuda.max_memory_allocated(device))
+        for device in range(torch_module.cuda.device_count())
+    }
 
 
 @contextmanager
 def measure_runtime(label: str) -> Iterator[SimpleNamespace]:
+    torch_module = _load_torch()
+    _reset_cuda_peak_memory_stats(torch_module)
+    started = time.perf_counter()
     holder = SimpleNamespace(receipt=None)
-    start = time.perf_counter()
     try:
         yield holder
     finally:
-        elapsed = time.perf_counter() - start
-        usage = resource.getrusage(resource.RUSAGE_SELF)
         holder.receipt = TelemetryReceipt(
-            schema="aimo-interp-telemetry/v0.1",
+            schema="aimo-interp-telemetry/v0.2",
             label=label,
-            wall_seconds=float(elapsed),
-            max_rss_kib=int(usage.ru_maxrss),
-            cuda_peak_bytes=_cuda_peak_bytes(),
+            wall_seconds=float(time.perf_counter() - started),
+            max_rss_bytes=_max_rss_bytes(),
+            cuda_peak_allocated_bytes_by_device=(
+                _cuda_peak_allocated_bytes_by_device(torch_module)
+            ),
         )
 
 
@@ -1471,14 +1533,7 @@ def write_receipt(receipt: TelemetryReceipt, path: Path) -> None:
     )
 ```
 
-Append to `runtime/README.md`:
-
-````markdown
-Telemetry is an execution receipt, not a model feature. Pre-gate scientific
-code may not consume telemetry fields as robustness predictors.
-````
-
-- [ ] **Step 4: Run telemetry tests**
+- [ ] **Step 4: Run the telemetry tests**
 
 Run:
 
@@ -1488,11 +1543,21 @@ uv run pytest tests/test_telemetry.py -v
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit telemetry**
+- [ ] **Step 5: Document and commit the measurement semantics**
+
+Append to `runtime/README.md`:
+
+```markdown
+`max_rss_bytes` is `null` when unsupported. CUDA telemetry is `null` without
+CUDA; otherwise it records one reset-at-entry peak allocation per visible
+device. Telemetry is never a scientific feature.
+```
+
+Commit:
 
 ```bash
 git add src/aimo_interp_infra/telemetry.py tests/test_telemetry.py runtime/README.md
-git commit -m "feat: record non-scientific runtime telemetry"
+git commit -m "feat: add portable AIMO execution telemetry"
 ```
 
 ---
