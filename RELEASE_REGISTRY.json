@@ -1,0 +1,7 @@
+{
+  "schema": "aimo-interp-release-registry/v0.2",
+  "training_data": null,
+  "cot_activation_interface": null,
+  "gate_open": false
+}
+
