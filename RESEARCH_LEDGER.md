@@ -37,3 +37,13 @@ or other feature predicts organizer-defined robustness.
 **Next legal action:** Run the pinned official trained-probe baseline unchanged
 in a compatible model-cache/GPU environment and record the acceptance receipt.
 
+## Baseline environment block
+
+**Status:** `ENVIRONMENT_BLOCKED`
+
+The unmodified official trained-probe baseline could not complete contract-smoke
+acceptance because the compatible Hugging Face model cache/environment was
+unavailable. No proxy model, modified baseline, or PASS receipt was used.
+
+This establishes no scientific claim and no lifecycle-certification claim.
+
