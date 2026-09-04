@@ -2139,27 +2139,20 @@ Push the branch and require the GitHub Actions `ci` workflow to pass before adva
 
 ---
 
-### Task 9: Record official trained-probe baseline acceptance before declaring infrastructure ready
+### Task 9: Record the official baseline contract smoke and truthful terminal state
 
 **Files:**
 - Create: `src/aimo_interp_infra/baseline_receipt.py`
 - Create: `scripts/reproduce_official_baseline.py`
 - Create: `receipts/README.md`
 - Test: `tests/test_baseline_receipt.py`
-- Modify: `COMPETITION_STATE.md`
-- Modify: `RESEARCH_LEDGER.md`
-- Modify: `README.md`
+- Modify: `COMPETITION_STATE.md`, `RESEARCH_LEDGER.md`, and `README.md`
 
 **Interfaces:**
-- Consumes:
-  - verified pinned upstream checkout;
-  - unmodified upstream solution `solutions/trained-probe`;
-  - official public validation input/reference directories;
-  - a compatible model-cache/GPU environment.
-- Produces:
-  - `BaselineReceipt`
-  - JSON receipt containing exact upstream commit, solution path, score-contract fields, telemetry, and execution status.
-- The receipt is an engineering acceptance artifact only. Baseline accuracy must not be consumed by scientific feature selection.
+- `CONTRACT_SMOKE_PASS` is the sole successful receipt status.
+- It means `OFFICIAL_BASELINE_CONTRACT_SMOKE` only: valid unmodified execution, coverage `1.0`, zero invalid predictions, and a compatible environment.
+- It is not lifecycle certification, target-model coverage, scientific adequacy, or a robustness result.
+- `INFRASTRUCTURE_READY` requires the smoke; unavailable compatible environment yields `ENVIRONMENT_BLOCKED`. Neither state opens science.
 
 - [ ] **Step 1: Write failing receipt tests**
 
@@ -2169,68 +2162,57 @@ Create `tests/test_baseline_receipt.py`:
 import json
 from pathlib import Path
 
+import pytest
+
 from aimo_interp_infra.baseline_receipt import (
+    CONTRACT_SMOKE_PASS,
     BaselineReceipt,
     write_baseline_receipt,
 )
 
 
-def test_baseline_receipt_round_trips_exact_contract_fields(tmp_path: Path):
+def test_smoke_receipt_requires_complete_valid_output(tmp_path: Path):
     receipt = BaselineReceipt(
-        schema="aimo-interp-baseline-receipt/v0.1",
+        schema="aimo-interp-baseline-receipt/v0.2",
         upstream_commit="e98c489a98acb6c833588dca74228bee9782d5dd",
         solution_path="solutions/trained-probe",
-        status="PASS",
+        status=CONTRACT_SMOKE_PASS,
         accuracy=0.5,
         coverage=1.0,
         invalid_predictions=0,
-        wall_seconds=12.5,
-        max_rss_kib=1024,
-        cuda_peak_bytes=None,
+        wall_seconds=1.0,
+        max_rss_bytes=None,
+        cuda_peak_allocated_bytes_by_device=None,
     )
-    path = tmp_path / "receipt.json"
-    write_baseline_receipt(receipt, path)
-
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["upstream_commit"] == (
-        "e98c489a98acb6c833588dca74228bee9782d5dd"
-    )
-    assert payload["solution_path"] == "solutions/trained-probe"
-    assert payload["coverage"] == 1.0
-    assert payload["invalid_predictions"] == 0
+    output = tmp_path / "receipt.json"
+    write_baseline_receipt(receipt, output)
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == CONTRACT_SMOKE_PASS
 
 
-def test_baseline_receipt_rejects_incomplete_predictions():
-    try:
+@pytest.mark.parametrize("coverage, invalid", [(0.9, 0), (1.0, 1)])
+def test_smoke_rejects_incomplete_or_invalid_output(coverage: float, invalid: int):
+    with pytest.raises(ValueError):
         BaselineReceipt(
-            schema="aimo-interp-baseline-receipt/v0.1",
+            schema="aimo-interp-baseline-receipt/v0.2",
             upstream_commit="e98c489a98acb6c833588dca74228bee9782d5dd",
             solution_path="solutions/trained-probe",
-            status="PASS",
+            status=CONTRACT_SMOKE_PASS,
             accuracy=0.5,
-            coverage=0.9,
-            invalid_predictions=0,
+            coverage=coverage,
+            invalid_predictions=invalid,
             wall_seconds=1.0,
-            max_rss_kib=1,
-            cuda_peak_bytes=None,
+            max_rss_bytes=None,
+            cuda_peak_allocated_bytes_by_device=None,
         )
-    except ValueError as exc:
-        assert "coverage" in str(exc)
-    else:
-        raise AssertionError("PASS receipt must require complete coverage")
 ```
 
-- [ ] **Step 2: Run the receipt tests and verify the module is missing**
+- [ ] **Step 2: Run the test to verify it fails**
 
-Run:
-
-```bash
-uv run pytest tests/test_baseline_receipt.py -v
-```
+Run: `uv run pytest tests/test_baseline_receipt.py -v`
 
 Expected: FAIL because `aimo_interp_infra.baseline_receipt` does not exist.
 
-- [ ] **Step 3: Implement the acceptance receipt type**
+- [ ] **Step 3: Implement the narrow receipt**
 
 Create `src/aimo_interp_infra/baseline_receipt.py`:
 
@@ -2240,6 +2222,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+CONTRACT_SMOKE_PASS = "CONTRACT_SMOKE_PASS"
 
 
 @dataclass(frozen=True)
@@ -2252,17 +2236,18 @@ class BaselineReceipt:
     coverage: float | None
     invalid_predictions: int | None
     wall_seconds: float
-    max_rss_kib: int
-    cuda_peak_bytes: int | None
+    max_rss_bytes: int | None
+    cuda_peak_allocated_bytes_by_device: dict[str, int] | None
 
     def __post_init__(self) -> None:
-        if self.status == "PASS":
-            if self.coverage != 1.0:
-                raise ValueError("PASS receipt requires coverage == 1.0")
-            if self.invalid_predictions != 0:
-                raise ValueError(
-                    "PASS receipt requires invalid_predictions == 0"
-                )
+        if self.status != CONTRACT_SMOKE_PASS:
+            raise ValueError("status must be CONTRACT_SMOKE_PASS")
+        if self.coverage != 1.0:
+            raise ValueError("CONTRACT_SMOKE_PASS requires coverage == 1.0")
+        if self.invalid_predictions != 0:
+            raise ValueError(
+                "CONTRACT_SMOKE_PASS requires invalid_predictions == 0"
+            )
 
 
 def write_baseline_receipt(receipt: BaselineReceipt, path: Path) -> None:
@@ -2273,7 +2258,7 @@ def write_baseline_receipt(receipt: BaselineReceipt, path: Path) -> None:
     )
 ```
 
-- [ ] **Step 4: Add the unmodified-baseline reproduction script**
+- [ ] **Step 4: Add the unmodified official-specimen runner**
 
 Create `scripts/reproduce_official_baseline.py`:
 
@@ -2282,6 +2267,7 @@ import argparse
 from pathlib import Path
 
 from aimo_interp_infra.baseline_receipt import (
+    CONTRACT_SMOKE_PASS,
     BaselineReceipt,
     write_baseline_receipt,
 )
@@ -2296,50 +2282,37 @@ UPSTREAM = ROOT / ".cache" / "getting-started"
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--small", action="store_true")
-    parser.add_argument(
-        "--input-dir",
-        type=Path,
-        default=UPSTREAM / "data" / "val-sample" / "input",
-    )
-    parser.add_argument(
-        "--reference-dir",
-        type=Path,
-        default=UPSTREAM / "data" / "val-sample" / "reference",
-    )
-    parser.add_argument(
-        "--receipt",
-        type=Path,
-        default=ROOT / "receipts" / "official-trained-probe.json",
-    )
+    parser.add_argument("--input-dir", type=Path, default=UPSTREAM / "data" / "val-sample" / "input")
+    parser.add_argument("--reference-dir", type=Path, default=UPSTREAM / "data" / "val-sample" / "reference")
+    parser.add_argument("--receipt", type=Path, default=ROOT / "receipts" / "official-baseline-contract-smoke.json")
     args = parser.parse_args()
 
     lock = UpstreamLock.from_json(ROOT / "UPSTREAM_LOCK.json")
     verify_checkout(lock, UPSTREAM)
-    solution = UPSTREAM / "solutions" / "trained-probe"
-
-    with measure_runtime("official-trained-probe") as telemetry:
+    with measure_runtime("official-baseline-contract-smoke") as telemetry:
         result = run_official(
             upstream_checkout=UPSTREAM,
-            solution=solution,
+            solution=UPSTREAM / "solutions" / "trained-probe",
             input_dir=args.input_dir,
             reference_dir=args.reference_dir,
             small=args.small,
         )
-
     runtime = telemetry.receipt
-    receipt = BaselineReceipt(
-        schema="aimo-interp-baseline-receipt/v0.1",
-        upstream_commit=lock.commit,
-        solution_path="solutions/trained-probe",
-        status="PASS",
-        accuracy=result.accuracy,
-        coverage=result.coverage,
-        invalid_predictions=result.invalid_predictions,
-        wall_seconds=runtime.wall_seconds,
-        max_rss_kib=runtime.max_rss_kib,
-        cuda_peak_bytes=runtime.cuda_peak_bytes,
+    write_baseline_receipt(
+        BaselineReceipt(
+            schema="aimo-interp-baseline-receipt/v0.2",
+            upstream_commit=lock.commit,
+            solution_path="solutions/trained-probe",
+            status=CONTRACT_SMOKE_PASS,
+            accuracy=result.accuracy,
+            coverage=result.coverage,
+            invalid_predictions=result.invalid_predictions,
+            wall_seconds=runtime.wall_seconds,
+            max_rss_bytes=runtime.max_rss_bytes,
+            cuda_peak_allocated_bytes_by_device=runtime.cuda_peak_allocated_bytes_by_device,
+        ),
+        args.receipt,
     )
-    write_baseline_receipt(receipt, args.receipt)
     print(args.receipt)
 
 
@@ -2347,166 +2320,113 @@ if __name__ == "__main__":
     main()
 ```
 
-Create `receipts/README.md`:
-
-````markdown
-# Acceptance Receipts
-
-Receipts in this directory document infrastructure execution only.
-
-The official trained-probe receipt records:
-- exact upstream commit;
-- exact unmodified upstream solution path;
-- coverage;
-- invalid-prediction count;
-- accuracy as an uninterpreted scorer output;
-- runtime and memory telemetry.
-
-Accuracy in these receipts is not an optimization signal and must not be used to
-choose a scientific feature family.
-````
-
-- [ ] **Step 5: Run receipt tests**
+- [ ] **Step 5: Run the receipt tests and the unmodified smoke**
 
 Run:
 
 ```bash
 uv run pytest tests/test_baseline_receipt.py -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Attempt the real official trained-probe acceptance run**
-
-Run:
-
-```bash
 uv run scripts/materialize_upstream.py
 cd .cache/getting-started
 uv run scripts/import_hf_dataset.py
 cd ../..
-uv run scripts/reproduce_official_baseline.py
+uv run scripts/reproduce_official_baseline.py --small
 ```
 
-Two legal outcomes exist.
+Expected on success: receipt status `CONTRACT_SMOKE_PASS`, coverage `1.0`, and zero invalid predictions. Accuracy is not an optimization signal.
 
-If the required cached model/GPU environment is available, expected:
-- process exits 0;
-- receipt status is `PASS`;
-- `coverage == 1.0`;
-- `invalid_predictions == 0`;
-- receipt records exact pinned upstream commit.
+If the sole reason acceptance cannot complete is absence of a compatible model-cache/GPU environment, do not substitute a model, modify the baseline, or write a PASS receipt. Choose `ENVIRONMENT_BLOCKED` in Step 7. Diagnose all other failures before assigning a terminal state.
 
-If the model cache/GPU environment is not available, do **not** modify the
-official baseline and do **not** substitute a different model. Record the state
-as `ENVIRONMENT_BLOCKED` in `COMPETITION_STATE.md`; infrastructure remains
-`PRE_GATE_SOFTWARE_VERIFIED`, not `INFRASTRUCTURE_READY`.
+- [ ] **Step 6: On smoke success, record the ready state**
 
-- [ ] **Step 7: On PASS only, freeze the infrastructure-ready state**
-
-Replace the software-verification block in `COMPETITION_STATE.md` with:
-
-````markdown
-## Infrastructure completion state
+Replace the verification block in `COMPETITION_STATE.md` with a block containing exactly:
 
 ```text
-PRE-GATE INFRASTRUCTURE:     VERIFIED
-OFFICIAL MODEL BASELINE:     PASS
-SCIENTIFIC FEATURE FAMILY:   NONE
-ROBUSTNESS CLASSIFIER:       NONE
-LEADERBOARD-DIRECTED TUNING: NONE
-PROJECT STATE:               WAITING_FOR_EXTERNAL_GATE
+INFRASTRUCTURE STATUS:                  INFRASTRUCTURE_READY
+OFFICIAL_BASELINE_CONTRACT_SMOKE:       CONTRACT_SMOKE_PASS
+LIFECYCLE_CERTIFICATION:                SEPARATELY VERIFIED WITH TEST DOUBLE
+SCIENTIFIC FEATURE FAMILY:              NONE
+ROBUSTNESS CLASSIFIER:                  NONE
+LEADERBOARD-DIRECTED TUNING:            NONE
+PROJECT STATE:                          WAITING_FOR_EXTERNAL_GATE
 ```
-````
 
-Append to `RESEARCH_LEDGER.md`:
+Append a `RESEARCH_LEDGER.md` entry whose status is
+`INFRASTRUCTURE_READY / WAITING_FOR_EXTERNAL_GATE` and whose claim ceiling is
+`OFFICIAL_BASELINE_CONTRACT_SMOKE != LIFECYCLE_CERTIFICATION != SCIENTIFIC_BASELINE`.
 
-````markdown
-## Official baseline acceptance
+- [ ] **Step 7: On proven compatible-environment absence, record the block**
 
-**Observation:** The pinned official `solutions/trained-probe` baseline executed
-without modification under a compatible environment with complete coverage and
-zero invalid predictions.
-
-**Status:** `INFRASTRUCTURE_READY / WAIT`
-
-**Claim ceiling:** Baseline accuracy is not interpreted as evidence for or
-against any scientific hypothesis in this repository.
-
-**Next legal action:** Wait for both official gating artifacts. Once both are
-registered, open only the observational-audit phase.
-````
-
-Replace the README stop block with:
-
-````markdown
-## Current stop
+Replace the same `COMPETITION_STATE.md` block with exactly:
 
 ```text
-INFRASTRUCTURE_READY -> WAITING_FOR_EXTERNAL_GATE
+INFRASTRUCTURE STATUS:                  ENVIRONMENT_BLOCKED
+OFFICIAL_BASELINE_CONTRACT_SMOKE:       NOT ACCEPTED
+BLOCKER:                                COMPATIBLE MODEL-CACHE/GPU ENVIRONMENT UNAVAILABLE
+SCIENTIFIC FEATURE FAMILY:              NONE
+ROBUSTNESS CLASSIFIER:                  NONE
+LEADERBOARD-DIRECTED TUNING:            NONE
+PROJECT STATE:                          ENVIRONMENT_BLOCKED
 ```
 
-No scientific solution, feature family, classifier, or preregistration is
-authorized until both official gating artifacts are registered and the
-observational audit is completed.
-````
+Append a `RESEARCH_LEDGER.md` entry with status `ENVIRONMENT_BLOCKED` and an
+explicit statement that it establishes no scientific or lifecycle claim.
 
-- [ ] **Step 8: Commit the acceptance tooling and, if available, the PASS receipt**
+- [ ] **Step 8: Document, commit, and verify exactly one terminal state**
 
-If Step 6 produced a PASS receipt:
+Create `receipts/README.md` stating that a baseline receipt certifies a contract
+smoke only, never lifecycle efficiency, target-model coverage, scientific
+adequacy, or robustness.
+
+For PASS:
 
 ```bash
 git add src/aimo_interp_infra/baseline_receipt.py \
   scripts/reproduce_official_baseline.py receipts/README.md \
-  receipts/official-trained-probe.json tests/test_baseline_receipt.py \
+  receipts/official-baseline-contract-smoke.json tests/test_baseline_receipt.py \
   COMPETITION_STATE.md RESEARCH_LEDGER.md README.md
-git commit -m "chore: accept pinned official AIMO baseline"
+git commit -m "chore: accept AIMO baseline contract smoke"
+uv run pytest -q
+grep -F "INFRASTRUCTURE_READY" COMPETITION_STATE.md
+test -f receipts/official-baseline-contract-smoke.json
 ```
 
-If Step 6 is environment-blocked, commit the tooling and blocked state without a
-fabricated receipt:
+For a proven environment block:
 
 ```bash
 git add src/aimo_interp_infra/baseline_receipt.py \
   scripts/reproduce_official_baseline.py receipts/README.md \
-  tests/test_baseline_receipt.py COMPETITION_STATE.md
+  tests/test_baseline_receipt.py COMPETITION_STATE.md RESEARCH_LEDGER.md README.md
 git commit -m "chore: record AIMO baseline environment block"
-```
-
-- [ ] **Step 9: Verify the final authority state**
-
-For a PASS path:
-
-```bash
-uv run pytest -q
-grep -F "WAITING_FOR_EXTERNAL_GATE" COMPETITION_STATE.md
-test -f receipts/official-trained-probe.json
-git status --short
-```
-
-Expected:
-- all tests PASS;
-- state is `WAITING_FOR_EXTERNAL_GATE`;
-- receipt exists;
-- working tree is clean.
-
-For an environment-blocked path:
-
-```bash
 uv run pytest -q
 grep -F "ENVIRONMENT_BLOCKED" COMPETITION_STATE.md
-test ! -f receipts/official-trained-probe.json
-git status --short
+test ! -f receipts/official-baseline-contract-smoke.json
 ```
 
-Expected:
-- all tests PASS;
-- no PASS receipt exists;
-- infrastructure is not falsely declared complete;
-- working tree is clean.
+Expected: tests pass, exactly one truthful terminal state is present, and neither
+state opens science.
 
 ---
 
+## Official baseline contract-smoke note
+
+Only the pinned unmodified official baseline may produce the smoke receipt.
+Never substitute a proxy model or interpret its accuracy.
+
+## Implementation completion gate
+
+```text
+INFRASTRUCTURE_READY iff all pre-gate infrastructure tests pass and the
+unmodified baseline smoke has coverage == 1.0, invalid_predictions == 0, and a
+compatible environment.
+
+ENVIRONMENT_BLOCKED if the sole remaining completion requirement is absence of
+that compatible environment.
+```
+
+Neither terminal state authorizes label/group/activation inspection, feature
+selection, classifier training, leaderboard-directed tuning, label replay, or
+scientific execution.
 ## Official Baseline Acceptance Note
 
 Task 9 is the sole authority for official trained-probe acceptance. Do not run a
