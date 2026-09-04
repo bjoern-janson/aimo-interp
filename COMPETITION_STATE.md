@@ -48,14 +48,15 @@ content-addressed, and Git-custodied; it is not history-rewrite-proof.
 Registration is custody only. Before both records exist, inspect neither
 training-data, label, grouping, nor activation contents.
 
-## Software verification state
+## Terminal state
 
 ```text
-PRE-GATE SOFTWARE:           VERIFIED
-OFFICIAL_BASELINE_CONTRACT_SMOKE:     PENDING ENVIRONMENT ACCEPTANCE
-SCIENTIFIC FEATURE FAMILY:   NONE
-ROBUSTNESS CLASSIFIER:       NONE
-LEADERBOARD-DIRECTED TUNING: NONE
-NEXT ACTION:                 OFFICIAL BASELINE CONTRACT-SMOKE ACCEPTANCE
+INFRASTRUCTURE STATUS:                  ENVIRONMENT_BLOCKED
+OFFICIAL_BASELINE_CONTRACT_SMOKE:       NOT ACCEPTED
+BLOCKER:                                COMPATIBLE MODEL-CACHE/GPU ENVIRONMENT UNAVAILABLE
+SCIENTIFIC FEATURE FAMILY:              NONE
+ROBUSTNESS CLASSIFIER:                  NONE
+LEADERBOARD-DIRECTED TUNING:            NONE
+PROJECT STATE:                          ENVIRONMENT_BLOCKED
 ```
 
