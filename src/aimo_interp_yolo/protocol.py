@@ -64,6 +64,13 @@ CLAIM_CEILING: dict[str, object] = {
     "public_development_label_use": "NONE", "training_label_use": "NONE",
     "leaderboard_tuning_within_battery": "NONE", "mechanism_claim": "NONE",
 }
+FROZEN_ROOT_SCALARS = {
+    "scientific_authority": "NONE",
+    "leaderboard_tuning_within_battery": "NONE",
+    "public_development_label_use": "NONE",
+    "training_label_use": "NONE",
+    "seed_namespace": BATTERY_ID,
+}
 
 
 @dataclass(frozen=True)
@@ -199,6 +206,8 @@ def validate_protocol(protocol: BatteryProtocol) -> None:
         raise ValueError("invalid frozen battery identity")
     if protocol.protocol_state not in {"OPEN", "CLOSED"}:
         raise ValueError("invalid protocol state")
+    if any(getattr(protocol, field) != expected for field, expected in FROZEN_ROOT_SCALARS.items()):
+        raise ValueError("frozen root contract mismatch")
     if [member.protocol_id for member in protocol.members] != list(EXPECTED_IDS):
         if len({member.protocol_id for member in protocol.members}) != len(protocol.members):
             raise ValueError("duplicate protocol_id")

@@ -103,3 +103,12 @@ def test_missing_nested_semantic_key_is_rejected(tmp_path: Path):
     write_payload(path, payload)
     with pytest.raises(ValueError, match="missing keys"):
         load_protocol(path)
+
+
+def test_root_semantic_scalar_mutation_is_rejected(tmp_path: Path):
+    payload = json.loads(PROTOCOL.read_text(encoding="utf-8"))
+    payload["scientific_authority"] = "SOME"
+    path = tmp_path / "mutated-root-scalar.json"
+    write_payload(path, payload)
+    with pytest.raises(ValueError, match="frozen root contract"):
+        load_protocol(path)
