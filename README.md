@@ -40,16 +40,9 @@ uv run scripts/build_submission.py controls/all-false dist/all-false-small.zip -
 
 Rebuilding an unchanged source tree must reproduce the ZIP byte-for-byte.
 
-## Current stop
+## Terminal state
 
-After software verification succeeds but before the official model baseline is
-accepted:
-
-```text
-PRE_GATE_SOFTWARE_VERIFIED -> BASELINE_ACCEPTANCE_PENDING
-```
-
-Do not create `solutions/`, a feature package, a classifier, or a scientific
-preregistration. After official baseline acceptance, the repository may move to
-`INFRASTRUCTURE_READY -> WAITING_FOR_EXTERNAL_GATE`.
+The unmodified official baseline could not be accepted because a compatible
+model-cache/GPU environment was unavailable. The repository therefore stops at
+`ENVIRONMENT_BLOCKED`; this opens no scientific work.
 
