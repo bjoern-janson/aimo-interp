@@ -147,12 +147,13 @@ def test_upstream_lock_pins_exact_starter_commit():
     assert lock["default_branch"] == "main"
     assert lock["acquired_at_utc"] == "2026-09-04T12:11:48Z"
     assert "https://aimo-interp.github.io/" in lock["references"]
+    assert lock["gate_artifact_registry"] == "RELEASE_REGISTRY.json"
 
 
 def test_release_registry_starts_closed():
     registry = json.loads((ROOT / "RELEASE_REGISTRY.json").read_text(encoding="utf-8"))
     assert registry == {
-        "schema": "aimo-interp-release-registry/v0.1",
+        "schema": "aimo-interp-release-registry/v0.2",
         "training_data": None,
         "cot_activation_interface": None,
         "gate_open": False,
@@ -222,7 +223,8 @@ Create `UPSTREAM_LOCK.json`:
     "https://arxiv.org/abs/2607.13899",
     "https://github.com/aimo-interp/getting-started"
   ],
-  "authority": "PINNED_EXECUTION_CONTRACT"
+  "authority": "PINNED_EXECUTION_CONTRACT",
+  "gate_artifact_registry": "RELEASE_REGISTRY.json"
 }
 ```
 
@@ -230,7 +232,7 @@ Create `RELEASE_REGISTRY.json`:
 
 ```json
 {
-  "schema": "aimo-interp-release-registry/v0.1",
+  "schema": "aimo-interp-release-registry/v0.2",
   "training_data": null,
   "cot_activation_interface": null,
   "gate_open": false
