@@ -1,0 +1,18 @@
+{
+  "schema": "aimo-interp-upstream-lock/v0.1",
+  "repository": "https://github.com/aimo-interp/getting-started.git",
+  "github_repository": "aimo-interp/getting-started",
+  "default_branch": "main",
+  "commit": "e98c489a98acb6c833588dca74228bee9782d5dd",
+  "commit_date_utc": "2026-09-02T11:43:03Z",
+  "commit_message": "fix: use shared leaderboard metric keys",
+  "acquired_at_utc": "2026-09-04T12:11:48Z",
+  "references": [
+    "https://aimo-interp.github.io/",
+    "https://arxiv.org/abs/2607.13899",
+    "https://github.com/aimo-interp/getting-started"
+  ],
+  "authority": "PINNED_EXECUTION_CONTRACT",
+  "gate_artifact_registry": "RELEASE_REGISTRY.json"
+}
+
