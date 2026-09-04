@@ -444,6 +444,7 @@ def test_lock_parses_exact_commit(tmp_path: Path):
                 "authority": "PINNED_EXECUTION_CONTRACT",
                 "acquired_at_utc": "2026-09-04T12:00:00Z",
                 "references": ["https://example.test/repo"],
+                "gate_artifact_registry": "RELEASE_REGISTRY.json",
             }
         ),
         encoding="utf-8",
@@ -451,6 +452,7 @@ def test_lock_parses_exact_commit(tmp_path: Path):
     lock = UpstreamLock.from_json(path)
     assert lock.commit == "a" * 40
     assert lock.github_repository == "owner/repo"
+    assert lock.gate_artifact_registry == "RELEASE_REGISTRY.json"
 
 
 def test_verify_checkout_accepts_matching_head(tmp_path: Path):
@@ -532,6 +534,7 @@ class UpstreamLock:
     authority: str
     acquired_at_utc: str | None = None
     references: tuple[str, ...] = ()
+    gate_artifact_registry: str | None = None
 
     @classmethod
     def from_json(cls, path: Path) -> "UpstreamLock":
@@ -544,6 +547,11 @@ class UpstreamLock:
             authority=str(payload["authority"]),
             acquired_at_utc=str(payload["acquired_at_utc"]),
             references=tuple(str(item) for item in payload["references"]),
+            gate_artifact_registry=(
+                str(payload["gate_artifact_registry"])
+                if payload.get("gate_artifact_registry") is not None
+                else None
+            ),
         )
 
 
