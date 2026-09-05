@@ -36,6 +36,30 @@ def test_every_zip_is_small_track_and_self_contained(tmp_path: Path):
             assert archive.read("small.txt") == b""
 
 
+def test_battery_build_removes_stale_zip_without_removing_unrelated_output_files(tmp_path: Path):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    stale_zip = output_dir / "old-submission.zip"
+    stale_zip.write_bytes(b"stale")
+    notes = output_dir / "notes.txt"
+    notes.write_text("preserve me", encoding="utf-8")
+
+    build_battery(PROTOCOL, output_dir, tmp_path / "stage", PACKAGE)
+
+    assert {path.name for path in output_dir.glob("*.zip")} == {
+        "yolo001-b1-y001-a-small.zip",
+        "yolo001-b1-y001-b-small.zip",
+        "yolo001-b1-y001-c-small.zip",
+        "yolo001-b1-y001-d-small.zip",
+        "yolo001-b1-y001-e-small.zip",
+        "yolo001-b1-y001-f-small.zip",
+        "yolo001-b1-ctrl-t-small.zip",
+        "yolo001-b1-ctrl-f-small.zip",
+    }
+    assert not stale_zip.exists()
+    assert notes.read_text(encoding="utf-8") == "preserve me"
+
+
 def test_y001_d_member_payload_is_exact_and_source_has_no_marker(tmp_path: Path):
     built = build_battery(PROTOCOL, tmp_path / "out", tmp_path / "stage", PACKAGE)
     artifact = built["Y001-D"]

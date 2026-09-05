@@ -62,6 +62,9 @@ def build_battery(
     package_dir: Path,
 ) -> dict[str, BuiltArtifact]:
     protocol = load_protocol(protocol_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_zip in output_dir.glob("*.zip"):
+        stale_zip.unlink()
     built: dict[str, BuiltArtifact] = {}
     for member in protocol.members:
         source_dir = build_member_source(protocol, member, staging_root / member.protocol_id, package_dir)
