@@ -22,7 +22,24 @@ activation interface have been released, registered with write-once,
 content-addressed, Git-custodied provenance, and passed a separate
 observational audit.
 
-The current repository is infrastructure only.
+The repository contains pre-gate infrastructure plus a separately governed YOLO exploratory competition lane; scientific execution remains closed.
+
+## Execution surfaces
+
+LOCAL BASELINE REPRODUCTION:       ENVIRONMENT_BLOCKED
+EXTERNAL CODABENCH CONTRACT SMOKE: PASSED
+EXTERNAL SUBMISSION ID:            915072
+EXTERNAL ACCURACY:                 0.47
+EXTERNAL COVERAGE:                 1.0
+EXTERNAL INVALID PREDICTIONS:      0
+
+## YOLO exploratory competition
+
+YOLO EXPLORATORY COMPETITION:      AUTHORIZED BY APPROVED DESIGN
+YOLO001-B1 DESIGN:                 APPROVED
+YOLO001-B1 PROTOCOL:               OPEN
+YOLO001-B1 SUBMISSION:             NOT AUTHORIZED BEFORE CLOSURE
+SCIENTIFIC AUTHORITY FROM YOLO:    NONE
 
 ## Contract authority layers
 

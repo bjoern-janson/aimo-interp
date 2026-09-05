@@ -47,3 +47,15 @@ unavailable. No proxy model, modified baseline, or PASS receipt was used.
 
 This establishes no scientific claim and no lifecycle-certification claim.
 
+## 2026-09-04 — External contract smoke provenance
+
+The external Codabench contract smoke completed under submission `915072` with
+`accuracy=0.47`, `coverage=1.0`, and `invalid_predictions=0`. Rank is ephemeral
+and is not recorded as an artifact property. Local baseline reproduction remains
+`ENVIRONMENT_BLOCKED` because the compatible model-cache/GPU environment is
+unavailable.
+
+The YOLO001-B1 exploratory design is approved and its protocol lane is OPEN;
+this records no B1 custody, upload, result, score, or scientific execution.
+Scientific execution remains closed.
+
